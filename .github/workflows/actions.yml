@@ -136,58 +136,29 @@ jobs:
     - go_lint
     runs-on: ubuntu-20.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v2
+      - name: Prepare
+        id: prepare
+        run: |
+            TAG=${GITHUB_REF##*/}
+            echo ::set-output name=tag_name::${TAG}
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
-
-      - name: Cache Docker layers
-        uses: actions/cache@v2
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
-
-      - name: Login to GHCR
-        uses: docker/login-action@v1
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Generate Docker tags (for main)
-        if: github.ref == 'refs/heads/main'
-        run: |
-          echo "platforms=linux/amd64" >> $GITHUB_ENV
-          echo "docker_tags=ghcr.io/buoyantio/linkerd-buoyant:latest" >> $GITHUB_ENV
-      - name: Generate Docker tags (for tagged release)
-        if: startsWith(github.ref, 'refs/tags')
-        run: |
-          echo "platforms=linux/amd64,linux/arm64,linux/arm/v6,linux/arm/v7" >> $GITHUB_ENV
-          echo "docker_tags=ghcr.io/buoyantio/linkerd-buoyant:latest,ghcr.io/buoyantio/linkerd-buoyant:${GITHUB_REF##*/}" >> $GITHUB_ENV
-
-      - name: Build and push
+      - name: Login do docker.io
+        run: docker login -u navicore -p ${{ secrets.DOCKER_TOKEN }}
+      - name: build and publish image
+        id: docker_build
         uses: docker/build-push-action@v2
         with:
           context: .
-          file: agent/Dockerfile
-          platforms: ${{ env.platforms }}
+          file: ./agent/Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ env.docker_tags }}
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new
-      - name: Move cache
-        # Temp fix
-        # https://github.com/docker/build-push-action/issues/252
-        # https://github.com/moby/buildkit/issues/1896
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
-
-  # everything below here for releases (tags)
+          tags: |
+            abhishek138/linkered:${{ steps.prepare.outputs.tag_name }}
+            abhishek138/linkered:latest
   create_release:
     if: startsWith(github.ref, 'refs/tags')
     name: Create Release
